@@ -1,6 +1,5 @@
 import time
 import keymaps
-import qrcode
 import socket
 import keyboard
 import shutil
@@ -8,7 +7,6 @@ import signal
 import os
 import subprocess
 
-from gmailhandle import GmailCredentials
 from PIL import Image, ImageDraw, ImageFont
 
 delay = .100 #standard delay v2.2, 2.1 can use 0
@@ -70,14 +68,6 @@ class Menu:
     def save_as(self):
         self.ending_content=""
         self.getInput("File Name", self.input_content)
-
-    def get_gmail_id(self):
-        self.ending_content="@gmail.com"
-        self.getInput("ID", self.input_content)
-
-    def get_gmail_pass(self):
-        self.ending_content=""
-        self.getInput("PW", self.input_content)
 
     def delete_file(self):
         self.ending_content=""
@@ -177,8 +167,6 @@ class ZeroWriter:
         self.networks_menu = Menu(self.display_draw, self.epd, self.display_image)
         self.populate_networks_menu()
 
-        self.gmail_menu = Menu(self.display_draw, self.epd, self.display_image)
-        self.populate_gmail_menu()
 
         #second init should catch if initial init has errors.
         time.sleep(.25)
@@ -217,11 +205,6 @@ class ZeroWriter:
         self.menu = self.networks_menu
         self.menu.display()
 
-    def show_gmail_menu(self):
-        self.parent_menu = self.menu
-        self.populate_gmail_menu()
-        self.menu = self.gmail_menu
-        self.menu.display()
 
     def hide_child_menu(self):
         self.menu = self.parent_menu
@@ -234,10 +217,7 @@ class ZeroWriter:
         self.menu.addItem("New", lambda: self.new_file(), None)
         self.menu.addItem("Load", lambda: self.show_load_menu(), None)
         self.menu.addItem("", lambda: print(""), None)
-        self.menu.addItem("Gmail Yourself", lambda: self.gmail_send(), None)
-        self.menu.addItem("QR Code", lambda: self.display_qr_code(), None)
         self.menu.addItem("Wifi: " + str(self.get_ssid()), lambda: self.show_networks_menu(), None)
-        self.menu.addItem("Gmail Config", lambda: self.show_gmail_menu(), None)
         self.menu.addItem("Files: " + str(self.server_address), lambda: None, None)
         self.menu.addItem("", lambda: print(""), None)
         self.menu.addItem("Power Off", self.power_down, None)
@@ -294,41 +274,10 @@ class ZeroWriter:
         self.populate_networks_menu()
         print("new network: "+ networkname)
 
-    def populate_gmail_menu(self):
-        gmusername = str(GmailCredentials.load_gmail_username())
-        gmpassword = str(GmailCredentials.load_gmail_password())
-        self.gmail_menu.menu_items.clear()
-        self.gmail_menu.addItem("<- Back", self.hide_child_menu, None)
-        self.gmail_menu.addItem("Gmail: " + gmusername, lambda: self.menu.get_gmail_id(), lambda: self.set_gmail_id(self.menu.input_content))
-        self.gmail_menu.addItem("App PW: " + ('*' * len(gmpassword)), lambda: self.menu.get_gmail_pass(), lambda: self.set_gmail_pass(self.menu.input_content))
-        self.gmail_menu.addItem("Connection: " + GmailCredentials.check_connection(gmusername,gmpassword), lambda: print(GmailCredentials.check_connection(gmusername,gmpassword)), None)
-        self.gmail_menu.addItem("=============================", lambda: None, None)
-        self.gmail_menu.addItem("This connects a gmail account.", lambda: None, None)
-        self.gmail_menu.addItem("Enable App Password in 2FA.", lambda: None, None)
-        self.gmail_menu.addItem("Use the App Password. Use a", lambda: None, None)
-        self.gmail_menu.addItem("new gmail account for security.", lambda: None, None)
+   
     
 
-    def gmail_send(self):
-        try:
-            gmusername = str(GmailCredentials.load_gmail_username())
-            gmpassword = str(GmailCredentials.load_gmail_password())
-            contents = self.previous_lines
-            GmailCredentials.send_gmail(gmusername, gmpassword, contents)
-            self.hide_menu()
-            time.sleep(delay)
-            if self.menu_mode:
-                self.menu.consolemsg(">>> Gmail Sent.")
-            else:
-                self.consolemsg(">>> Gmail Sent.")
-
-        except Exception as e:
-            self.hide_menu()
-            time.sleep(delay)
-            if self.menu_mode:
-                self.menu.consolemsg(">>> Gmail Failed.")
-            else:
-                self.consolemsg(">>> Gmail Failed.")
+    
 
     def connect_to_network(self, network, password):
         self.connect_to_wifi(network, password)
@@ -454,42 +403,7 @@ class ZeroWriter:
         self.selected_item = 0
         self.menu.display()
 
-    def display_qr_code(self):
-        self.menu_mode = True        
-        try:
-            # Combine all previous lines into a single string
-            qr_data = 'mailto:example@example.com?body=' + ' '.join(self.previous_lines)
-            # Generate QR code
-            # giving it no version will allow it to auto-detect the smallest version that will fit the data
-            # currently does not handle extremely large files
-            qr = qrcode.QRCode(
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=2,
-                border=4,
-            )
-            qr.add_data(qr_data)
-            qr.make(fit=True)
-            qr_img = qr.make_image(fill='black', back_color='white')
-            # Convert QR code image to match the display's image mode
-            qr_img_converted = qr_img.convert('1')
-            # Save QR code to the filesystem
-            qr_img_save_path = os.path.join(os.path.dirname(__file__), 'data', 'qr_code.png')
-            qr_img.save(qr_img_save_path)
-            print(f"QR code saved to {qr_img_save_path}")
-
-            # Calculate position to center QR code on the display
-            qr_x = (self.epd.width - qr_img_converted.width) // 2
-            qr_y = (self.epd.height - qr_img_converted.height) // 2
-            # Clear the display image
-            self.display_draw.rectangle((0, 0, self.epd.width, self.epd.height), fill=255)
-            # Paste the QR code onto the display image
-            self.display_image.paste(qr_img_converted, (qr_x, qr_y))
-            # Update the display with the new image
-            partial_buffer = self.epd.getbuffer(self.display_image)
-            self.epd.display_Partial(partial_buffer)
-            time.sleep(delay)
-        except Exception as e:
-            self.menu.consolemsg(e)
+   
 
     def update_display(self):
         self.display_updating = True
@@ -593,24 +507,6 @@ class ZeroWriter:
         self.menu.consolemsg("[Save As: ]" + f'{userinput}.txt')
         #self.consolemsg("[Save As: ]" + f'{userinput}.txt')
 
-    def set_gmail_id(self, userinput):
-        try:
-            GmailCredentials.write_gmail_username(userinput)
-            self.populate_gmail_menu()
-            time.sleep(delay)
-            self.menu.display()
-        except Exception as e:
-            print(e)
-
-    def set_gmail_pass(self, userinput):
-        try:
-            GmailCredentials.write_gmail_password(userinput)
-            self.populate_gmail_menu()
-            time.sleep(delay)
-            self.menu.display()
-        except Exception as e:
-            print(e)
-
 
     def handle_key_press(self, e):
         if e.name == 'ctrl': #if control is pressed
@@ -681,10 +577,6 @@ class ZeroWriter:
             self.save_file()
         if e.name== "n" and self.control_active: #ctrl+n new file
             self.new_file()
-        if e.name == "q" and self.control_active: #ctrl+q qrcode
-            self.display_qr_code()
-        if e.name == "g" and self.control_active: #ctrl+g gmail
-            self.gmail_send()
         if e.name == "r" and self.control_active: #ctrl+r slow refresh
             self.doReset = True
         if e.name == "backspace" and self.control_active: #ctrl+backspace delete prev word
